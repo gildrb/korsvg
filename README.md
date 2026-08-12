@@ -1,19 +1,24 @@
 # hermeneus
 
-A portable, self-contained C document API for parsing, retaining, measuring, drawing, and serializing SVG data. Its SVG parser and rasterizer are directly adapted from Archetypon and ship inside the library.
+A portable C document API for parsing, retaining, measuring, drawing, and serializing SVG data through the reusable Archetypon library.
 
 ## Build
 
 ```sh
-cd ~/Repos/hermeneus
+git clone https://github.com/gildrb/archetypon
+git clone https://github.com/gildrb/hermeneus
+cd hermeneus
 make
 make test
 ```
 
-The build produces `libhermeneus.a`. A consumer links it with the system math runtime:
+The default build expects both repositories under the same parent directory. Set `ARCHETYPON_DIR=/path/to/archetypon` when they are elsewhere. Hermeneus builds Archetypon when its library is missing or stale.
+
+The build produces `libhermeneus.a`. It contains the document adapter only; consumers link it with `libarchetypon.a` and the system math runtime:
 
 ```sh
-cc app.c -I. libhermeneus.a -lm
+cc app.c -I. -I../archetypon libhermeneus.a \
+  ../archetypon/libarchetypon.a -lm
 ```
 
 ## Document surface
@@ -58,7 +63,7 @@ The context is straight-alpha RGBA with an explicit stride. Its default viewport
 
 Document creation performs a one-pixel probe render. This forces unsupported rendering elements and properties to fail at creation rather than survive as deferred draw-time failures. The retained source remains byte-for-byte stable for serialization.
 
-Supported SVG geometry, paths, transforms, solid paints, element opacity, fill rules, solid strokes, and round stroke joins use the adapted Archetypon parser under `src/`. Container opacity, dashed strokes, miter joins, and bevel joins are rejected. Gradients, text, external resources, filters, masks, patterns, clipping paths, CSS stylesheets, and nested viewports remain outside the current renderer.
+Supported SVG geometry, paths, transforms, solid paints, element opacity, fill rules, solid strokes, and round stroke joins are provided by Archetypon. Container opacity, dashed strokes, miter joins, and bevel joins are rejected. Gradients, text, external resources, filters, masks, patterns, clipping paths, CSS stylesheets, and nested viewports remain outside the renderer.
 
 ## Verification
 
@@ -70,7 +75,7 @@ Supported SVG geometry, paths, transforms, solid paints, element opacity, fill r
 4. byte-exact data and file serialization plus URL reloading;
 5. rejection of malformed structure, non-finite geometry, unsupported effects, null inputs, and immutable-destination operations.
 
-The test also checks that the six primary compatibility symbols are present in `libhermeneus.a`. `cc`, `clang`, ASan, and UBSan builds are supported through conventional `CC`, `CFLAGS`, and `LDFLAGS` overrides.
+The test checks that the compatibility symbols are defined by `libhermeneus.a`, while the renderer symbols remain undefined Archetypon dependencies. `cc`, `clang`, ASan, and UBSan builds are supported through conventional `CC`, `CFLAGS`, and `LDFLAGS` overrides.
 
 ## Files
 
@@ -78,13 +83,8 @@ The test also checks that the six primary compatibility symbols are present in `
 hermeneus/
   hermeneus.h       public opaque document, data, URL, and RGBA context API
   main.c            ownership, I/O, document calls, rendering, compositing
-  src/core.c        checked parser diagnostics and arithmetic
-  src/image.c       parser image lifetime
-  src/svg.c         XML/SVG parsing, paths, styles, rasterization
-  src/parser.h      internal renderer boundary
-  src/internal.h    private parser scalars and helpers
   tests/test.c      API, lifetime, pixel, round-trip, and rejection proof
   tests/test.sh     isolated execution and exported-symbol proof
-  Makefile          static library, test, install, clean
+  Makefile          Hermeneus build plus Archetypon dependency linkage
   LICENSE           MIT terms
 ```

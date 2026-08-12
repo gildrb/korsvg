@@ -5,32 +5,38 @@ CFLAGS ?= -std=c11 -O2 -Wall -Wextra -Wpedantic
 LDFLAGS ?=
 LDLIBS ?= -lm
 PREFIX ?= /usr/local
+ARCHETYPON_DIR ?= ../archetypon
 
-OBJECTS := build/main.o build/src/core.o build/src/image.o build/src/svg.o
+ARCHETYPON_HEADER := $(ARCHETYPON_DIR)/archetypon.h
+ARCHETYPON_LIBRARY := $(ARCHETYPON_DIR)/libarchetypon.a
+ARCHETYPON_SOURCES := $(ARCHETYPON_HEADER) $(wildcard $(ARCHETYPON_DIR)/src/*.c) \
+                      $(wildcard $(ARCHETYPON_DIR)/src/*.h)
+OBJECTS := build/main.o
 
 .PHONY: all clean install test
 
-all: libhermeneus.a
+all: $(ARCHETYPON_LIBRARY) libhermeneus.a
 
 libhermeneus.a: $(OBJECTS)
+	$(RM) "$@"
 	$(AR) rcs "$@" $(OBJECTS)
 
-build/main.o: main.c hermeneus.h src/parser.h
-	mkdir -p build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c "$<" -o "$@"
+$(ARCHETYPON_LIBRARY): $(ARCHETYPON_SOURCES)
+	$(MAKE) -C "$(ARCHETYPON_DIR)" libarchetypon.a
 
-build/src/%.o: src/%.c src/parser.h src/internal.h
-	mkdir -p build/src
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c "$<" -o "$@"
-
-build/test: tests/test.c hermeneus.h libhermeneus.a
+build/main.o: main.c hermeneus.h $(ARCHETYPON_HEADER)
 	mkdir -p build
-	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test.c libhermeneus.a $(LDFLAGS) $(LDLIBS) -o "$@"
+	$(CC) $(CPPFLAGS) -I"$(ARCHETYPON_DIR)" $(CFLAGS) -c "$<" -o "$@"
+
+build/test: tests/test.c hermeneus.h libhermeneus.a $(ARCHETYPON_LIBRARY)
+	mkdir -p build
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test.c libhermeneus.a \
+		$(ARCHETYPON_LIBRARY) $(LDFLAGS) $(LDLIBS) -o "$@"
 
 test: build/test
 	./tests/test.sh
 
-install: libhermeneus.a
+install: all
 	install -d "$(DESTDIR)$(PREFIX)/include"
 	install -m 644 hermeneus.h "$(DESTDIR)$(PREFIX)/include/hermeneus.h"
 	install -d "$(DESTDIR)$(PREFIX)/lib"

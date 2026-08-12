@@ -12,4 +12,15 @@ for symbol in $symbols; do
 	nm -g --defined-only "$root/libhermeneus.a" | grep -q " $symbol$"
 done
 
+dependencies='archetypon_svg_canvas_size archetypon_svg_render archetypon_image_free'
+for symbol in $dependencies; do
+	nm -u "$root/libhermeneus.a" | grep -q " $symbol$"
+done
+
+if nm -g --defined-only "$root/libhermeneus.a" |
+	grep -Eq ' (archetypon_|hermeneus_parser_)'; then
+	printf 'Hermeneus contains copied parser symbols\n' >&2
+	exit 1
+fi
+
 printf 'hermeneus tests passed\n'

@@ -1,6 +1,6 @@
 #include "hermeneus.h"
 
-#include "src/parser.h"
+#include <archetypon.h>
 
 #include <errno.h>
 #include <limits.h>
@@ -359,7 +359,7 @@ CFTypeID CGSVGDocumentGetTypeID(void) {
 CGSVGDocumentRef CGSVGDocumentCreateFromData(CFDataRef data,
                                              CFDictionaryRef options) {
   CGSVGDocumentRef document;
-  HermeneusParserImage probe = {0};
+  ArchetyponImage probe = {0};
   f64 width;
   f64 height;
   char error[256] = {0};
@@ -375,19 +375,19 @@ CGSVGDocumentRef CGSVGDocumentCreateFromData(CFDataRef data,
     set_error("SVG data contains a null byte");
     return NULL;
   }
-  if (!hermeneus_parser_svg_canvas_size((const char *)data->bytes, data->length,
-                                         &width, &height, error, sizeof(error)) ||
+  if (!archetypon_svg_canvas_size((const char *)data->bytes, data->length,
+                                   &width, &height, error, sizeof(error)) ||
       !isfinite(width) || !isfinite(height) || width <= 0 || height <= 0) {
     set_error("%s", error[0] == 0 ? "SVG canvas is invalid" : error);
     return NULL;
   }
-  if (!hermeneus_parser_svg_render((const char *)data->bytes, data->length, 1, 1,
-                                    &probe, error, sizeof(error))) {
-    hermeneus_parser_image_free(&probe);
+  if (!archetypon_svg_render((const char *)data->bytes, data->length, 1, 1,
+                              &probe, error, sizeof(error))) {
+    archetypon_image_free(&probe);
     set_error("%s", error[0] == 0 ? "SVG parse failed" : error);
     return NULL;
   }
-  hermeneus_parser_image_free(&probe);
+  archetypon_image_free(&probe);
   document = (CGSVGDocumentRef)calloc(1, sizeof(*document));
   if (document == NULL) {
     set_error("out of memory creating SVG document");
@@ -514,7 +514,7 @@ static void composite_pixel(u8 *destination, const u8 *source) {
 
 void CGContextDrawSVGDocument(CGContextRef context,
                               CGSVGDocumentRef document) {
-  HermeneusParserImage image = {0};
+  ArchetyponImage image = {0};
   char error[256] = {0};
   i32 y;
 
@@ -523,11 +523,11 @@ void CGContextDrawSVGDocument(CGContextRef context,
     set_error("context and SVG document are required");
     return;
   }
-  if (!hermeneus_parser_svg_render(
+  if (!archetypon_svg_render(
           (const char *)document->source, document->source_length,
           context->viewport_width, context->viewport_height, &image, error,
           sizeof(error))) {
-    hermeneus_parser_image_free(&image);
+    archetypon_image_free(&image);
     set_error("%s", error[0] == 0 ? "SVG draw failed" : error);
     return;
   }
@@ -544,7 +544,7 @@ void CGContextDrawSVGDocument(CGContextRef context,
                       source + (size_t)x * 4);
     }
   }
-  hermeneus_parser_image_free(&image);
+  archetypon_image_free(&image);
 }
 
 i32 CGSVGDocumentWriteToData(CGSVGDocumentRef document, CFDataRef data,
