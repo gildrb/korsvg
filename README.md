@@ -1,4 +1,4 @@
-# hermeneus
+# KorSVG
 
 A portable C document API for parsing, retaining, measuring, drawing, and serializing SVG data through the reusable Archetypon library.
 
@@ -6,18 +6,18 @@ A portable C document API for parsing, retaining, measuring, drawing, and serial
 
 ```sh
 git clone https://github.com/gildrb/archetypon
-git clone https://github.com/gildrb/hermeneus
-cd hermeneus
+git clone https://github.com/gildrb/korsvg
+cd korsvg
 make
 make test
 ```
 
-The default build expects both repositories under the same parent directory. Set `ARCHETYPON_DIR=/path/to/archetypon` when they are elsewhere. Hermeneus builds Archetypon when its library is missing or stale.
+The default build expects both repositories under the same parent directory. Set `ARCHETYPON_DIR=/path/to/archetypon` when they are elsewhere. KorSVG builds Archetypon when its library is missing or stale.
 
-The build produces `libhermeneus.a`. It contains the document adapter only; consumers link it with `libarchetypon.a` and the system math runtime:
+The build produces `libkorsvg.a`. It contains the document adapter only; consumers link it with `libarchetypon.a` and the system math runtime:
 
 ```sh
-cc app.c -I. -I../archetypon libhermeneus.a \
+cc app.c -I. -I../archetypon libkorsvg.a \
   ../archetypon/libarchetypon.a -lm
 ```
 
@@ -32,32 +32,32 @@ cc app.c -I. -I../archetypon libhermeneus.a \
 | `CGContextDrawSVGDocument` | Renders into the active RGBA viewport and source-over composites the result |
 | `CGSVGDocumentWriteToData` | Appends the original source bytes to mutable data |
 | `CGSVGDocumentWriteToURL` | Writes the original source bytes to a file |
-| `CGSVGDocumentGetTypeID` | Returns the stable Hermeneus document type identifier |
+| `CGSVGDocumentGetTypeID` | Returns the stable KorSVG document type identifier |
 
 `CFDataRef`, `CFURLRef`, `CGContextRef`, `CGSVGDocumentRef`, `CFDictionaryRef`, `CFTypeID`, and `CGSize` have local C definitions. No platform headers or dynamic symbol lookup are required. Options are accepted for call-shape compatibility and currently have no policy effect.
 
 ## Drawing
 
 ```c
-#include "hermeneus.h"
+#include "korsvg.h"
 
-CFDataRef data = HermeneusDataCreate(svg, svg_length);
+CFDataRef data = KorSVGDataCreate(svg, svg_length);
 CGSVGDocumentRef document = CGSVGDocumentCreateFromData(data, NULL);
 CGSize size = CGSVGDocumentGetCanvasSize(document);
-CGContextRef context = HermeneusContextCreate(512, 512);
+CGContextRef context = KorSVGContextCreate(512, 512);
 
-HermeneusContextSetViewport(context, 0, 0, 512, 512);
+KorSVGContextSetViewport(context, 0, 0, 512, 512);
 CGContextDrawSVGDocument(context, document);
 
-uint8_t *rgba = HermeneusContextGetData(context);
-size_t stride = HermeneusContextGetStride(context);
+uint8_t *rgba = KorSVGContextGetData(context);
+size_t stride = KorSVGContextGetStride(context);
 
-HermeneusContextRelease(context);
+KorSVGContextRelease(context);
 CGSVGDocumentRelease(document);
-HermeneusDataRelease(data);
+KorSVGDataRelease(data);
 ```
 
-The context is straight-alpha RGBA with an explicit stride. Its default viewport is the full image. `HermeneusContextClear` initializes all pixels, and `HermeneusContextSetViewport` bounds the next and subsequent draws. Diagnostics are thread-local and available through `HermeneusGetLastError`.
+The context is straight-alpha RGBA with an explicit stride. Its default viewport is the full image. `KorSVGContextClear` initializes all pixels, and `KorSVGContextSetViewport` bounds the next and subsequent draws. Diagnostics are thread-local and available through `KorSVGGetLastError`.
 
 ## Parsing boundary
 
@@ -75,16 +75,16 @@ Supported SVG geometry, paths, transforms, solid paints, element opacity, fill r
 4. byte-exact data and file serialization plus URL reloading;
 5. rejection of malformed structure, non-finite geometry, unsupported effects, null inputs, and immutable-destination operations.
 
-The test checks that the compatibility symbols are defined by `libhermeneus.a`, while the renderer symbols remain undefined Archetypon dependencies. `cc`, `clang`, ASan, and UBSan builds are supported through conventional `CC`, `CFLAGS`, and `LDFLAGS` overrides.
+The test checks that the compatibility symbols are defined by `libkorsvg.a`, while the renderer symbols remain undefined Archetypon dependencies. `cc`, `clang`, ASan, and UBSan builds are supported through conventional `CC`, `CFLAGS`, and `LDFLAGS` overrides.
 
 ## Files
 
 ```text
-hermeneus/
-  hermeneus.h       public opaque document, data, URL, and RGBA context API
+korsvg/
+  korsvg.h       public opaque document, data, URL, and RGBA context API
   main.c            ownership, I/O, document calls, rendering, compositing
   tests/test.c      API, lifetime, pixel, round-trip, and rejection proof
   tests/test.sh     isolated execution and exported-symbol proof
-  Makefile          Hermeneus build plus Archetypon dependency linkage
+  Makefile          KorSVG build plus Archetypon dependency linkage
   LICENSE           MIT terms
 ```

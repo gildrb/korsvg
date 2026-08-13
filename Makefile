@@ -15,22 +15,22 @@ OBJECTS := build/main.o
 
 .PHONY: all clean install test
 
-all: $(ARCHETYPON_LIBRARY) libhermeneus.a
+all: $(ARCHETYPON_LIBRARY) libkorsvg.a
 
-libhermeneus.a: $(OBJECTS)
+libkorsvg.a: $(OBJECTS)
 	$(RM) "$@"
 	$(AR) rcs "$@" $(OBJECTS)
 
 $(ARCHETYPON_LIBRARY): $(ARCHETYPON_SOURCES)
 	$(MAKE) -C "$(ARCHETYPON_DIR)" libarchetypon.a
 
-build/main.o: main.c hermeneus.h $(ARCHETYPON_HEADER)
+build/main.o: main.c korsvg.h $(ARCHETYPON_HEADER)
 	mkdir -p build
 	$(CC) $(CPPFLAGS) -I"$(ARCHETYPON_DIR)" $(CFLAGS) -c "$<" -o "$@"
 
-build/test: tests/test.c hermeneus.h libhermeneus.a $(ARCHETYPON_LIBRARY)
+build/test: tests/test.c korsvg.h libkorsvg.a $(ARCHETYPON_LIBRARY)
 	mkdir -p build
-	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test.c libhermeneus.a \
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test.c libkorsvg.a \
 		$(ARCHETYPON_LIBRARY) $(LDFLAGS) $(LDLIBS) -o "$@"
 
 test: build/test
@@ -38,9 +38,9 @@ test: build/test
 
 install: all
 	install -d "$(DESTDIR)$(PREFIX)/include"
-	install -m 644 hermeneus.h "$(DESTDIR)$(PREFIX)/include/hermeneus.h"
+	install -m 644 korsvg.h "$(DESTDIR)$(PREFIX)/include/korsvg.h"
 	install -d "$(DESTDIR)$(PREFIX)/lib"
-	install -m 644 libhermeneus.a "$(DESTDIR)$(PREFIX)/lib/libhermeneus.a"
+	install -m 644 libkorsvg.a "$(DESTDIR)$(PREFIX)/lib/libkorsvg.a"
 
 clean:
-	rm -rf build libhermeneus.a
+	rm -rf build libkorsvg.a
