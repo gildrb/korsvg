@@ -1,10 +1,10 @@
-#include "../hermeneus.h"
+#include "../korsvg.h"
 
 #include <stdio.h>
 #include <string.h>
 
 static int fail(const char *message) {
-  fprintf(stderr, "hermeneus test failed: %s\n", message);
+  fprintf(stderr, "korsvg test failed: %s\n", message);
   return 1;
 }
 
@@ -14,27 +14,27 @@ static int expect(int condition, const char *message) {
 
 static int expect_rejected_svg(const char *svg, size_t length,
                                const char *message) {
-  CFDataRef data = HermeneusDataCreate(svg, length);
+  CFDataRef data = KorSVGDataCreate(svg, length);
   CGSVGDocumentRef document;
 
   if (data == NULL) {
-    return fail(HermeneusGetLastError());
+    return fail(KorSVGGetLastError());
   }
   document = CGSVGDocumentCreateFromData(data, NULL);
-  HermeneusDataRelease(data);
+  KorSVGDataRelease(data);
   if (document != NULL) {
     CGSVGDocumentRelease(document);
     return fail(message);
   }
-  if (HermeneusGetLastError()[0] == 0) {
+  if (KorSVGGetLastError()[0] == 0) {
     return fail("rejected SVG did not report an error");
   }
   return 0;
 }
 
 static const uint8_t *pixel(CGContextRef context, int32_t x, int32_t y) {
-  return HermeneusContextGetData(context) +
-         (size_t)y * HermeneusContextGetStride(context) + (size_t)x * 4;
+  return KorSVGContextGetData(context) +
+         (size_t)y * KorSVGContextGetStride(context) + (size_t)x * 4;
 }
 
 int main(int argument_count, char **arguments) {
@@ -84,15 +84,15 @@ int main(int argument_count, char **arguments) {
   if (snprintf(path, sizeof(path), "%s/roundtrip.svg", arguments[1]) < 0) {
     return fail("temporary path creation failed");
   }
-  source = HermeneusDataCreate(svg, sizeof(svg) - 1);
-  if (expect(source != NULL, HermeneusGetLastError()) ||
-      expect(!HermeneusDataIsMutable(source), "source data must be immutable")) {
+  source = KorSVGDataCreate(svg, sizeof(svg) - 1);
+  if (expect(source != NULL, KorSVGGetLastError()) ||
+      expect(!KorSVGDataIsMutable(source), "source data must be immutable")) {
     goto cleanup;
   }
   document = CGSVGDocumentCreateFromData(source, NULL);
-  HermeneusDataRelease(source);
+  KorSVGDataRelease(source);
   source = NULL;
-  if (expect(document != NULL, HermeneusGetLastError()) ||
+  if (expect(document != NULL, KorSVGGetLastError()) ||
       expect(CGSVGDocumentGetTypeID() != 0, "document type ID is zero") ||
       expect(CGSVGDocumentRetain(document) == document,
              "document retain changed the reference")) {
@@ -104,19 +104,19 @@ int main(int argument_count, char **arguments) {
              "canvas size is wrong")) {
     goto cleanup;
   }
-  context = HermeneusContextCreate(100, 60);
-  if (expect(context != NULL, HermeneusGetLastError()) ||
-      expect(HermeneusContextGetWidth(context) == 100 &&
-                 HermeneusContextGetHeight(context) == 60,
+  context = KorSVGContextCreate(100, 60);
+  if (expect(context != NULL, KorSVGGetLastError()) ||
+      expect(KorSVGContextGetWidth(context) == 100 &&
+                 KorSVGContextGetHeight(context) == 60,
              "context dimensions are wrong") ||
-      expect(HermeneusContextClear(context, 0, 0, 0, 0),
-             HermeneusGetLastError()) ||
-      expect(HermeneusContextSetViewport(context, 10, 10, 80, 40),
-             HermeneusGetLastError())) {
+      expect(KorSVGContextClear(context, 0, 0, 0, 0),
+             KorSVGGetLastError()) ||
+      expect(KorSVGContextSetViewport(context, 10, 10, 80, 40),
+             KorSVGGetLastError())) {
     goto cleanup;
   }
   CGContextDrawSVGDocument(context, document);
-  if (expect(HermeneusGetLastError()[0] == 0, HermeneusGetLastError())) {
+  if (expect(KorSVGGetLastError()[0] == 0, KorSVGGetLastError())) {
     goto cleanup;
   }
   sample = pixel(context, 20, 30);
@@ -133,43 +133,43 @@ int main(int argument_count, char **arguments) {
   }
   sample = pixel(context, 5, 5);
   if (expect(sample[3] == 0, "draw escaped the viewport") ||
-      expect(!HermeneusContextSetViewport(context, 90, 0, 20, 20),
+      expect(!KorSVGContextSetViewport(context, 90, 0, 20, 20),
              "invalid viewport was accepted") ||
-      expect(HermeneusGetLastError()[0] != 0,
+      expect(KorSVGGetLastError()[0] != 0,
              "invalid viewport did not report an error")) {
     goto cleanup;
   }
-  serialized = HermeneusDataCreateMutable();
-  if (expect(serialized != NULL, HermeneusGetLastError()) ||
+  serialized = KorSVGDataCreateMutable();
+  if (expect(serialized != NULL, KorSVGGetLastError()) ||
       expect(CGSVGDocumentWriteToData(document, serialized, NULL),
-             HermeneusGetLastError()) ||
-      expect(HermeneusDataGetLength(serialized) == sizeof(svg) - 1,
+             KorSVGGetLastError()) ||
+      expect(KorSVGDataGetLength(serialized) == sizeof(svg) - 1,
              "serialized length is wrong") ||
-      expect(memcmp(HermeneusDataGetBytes(serialized), svg, sizeof(svg) - 1) ==
+      expect(memcmp(KorSVGDataGetBytes(serialized), svg, sizeof(svg) - 1) ==
                  0,
              "serialized bytes changed")) {
     goto cleanup;
   }
-  source = HermeneusDataCreate(svg, sizeof(svg) - 1);
+  source = KorSVGDataCreate(svg, sizeof(svg) - 1);
   if (expect(!CGSVGDocumentWriteToData(document, source, NULL),
              "immutable destination accepted serialization") ||
-      expect(HermeneusGetLastError()[0] != 0,
+      expect(KorSVGGetLastError()[0] != 0,
              "immutable destination did not report an error")) {
     goto cleanup;
   }
-  url = HermeneusURLCreate(path);
-  if (expect(url != NULL, HermeneusGetLastError()) ||
-      expect(HermeneusURLRetain(url) == url,
+  url = KorSVGURLCreate(path);
+  if (expect(url != NULL, KorSVGGetLastError()) ||
+      expect(KorSVGURLRetain(url) == url,
              "URL retain changed the reference")) {
     goto cleanup;
   }
-  HermeneusURLRelease(url);
+  KorSVGURLRelease(url);
   if (expect(CGSVGDocumentWriteToURL(document, url, NULL),
-             HermeneusGetLastError())) {
+             KorSVGGetLastError())) {
     goto cleanup;
   }
   loaded = CGSVGDocumentCreateFromURL(url, NULL);
-  if (expect(loaded != NULL, HermeneusGetLastError())) {
+  if (expect(loaded != NULL, KorSVGGetLastError())) {
     goto cleanup;
   }
   size = CGSVGDocumentGetCanvasSize(loaded);
@@ -177,47 +177,47 @@ int main(int argument_count, char **arguments) {
              "URL document canvas size is wrong")) {
     goto cleanup;
   }
-  bad = HermeneusDataCreate(invalid, sizeof(invalid) - 1);
-  if (expect(bad != NULL, HermeneusGetLastError()) ||
+  bad = KorSVGDataCreate(invalid, sizeof(invalid) - 1);
+  if (expect(bad != NULL, KorSVGGetLastError()) ||
       expect(CGSVGDocumentCreateFromData(bad, NULL) == NULL,
              "invalid SVG created a document") ||
-      expect(HermeneusGetLastError()[0] != 0,
+      expect(KorSVGGetLastError()[0] != 0,
              "invalid SVG did not report an error")) {
     goto cleanup;
   }
-  HermeneusDataRelease(bad);
-  bad = HermeneusDataCreate(unsupported, sizeof(unsupported) - 1);
-  if (expect(bad != NULL, HermeneusGetLastError()) ||
+  KorSVGDataRelease(bad);
+  bad = KorSVGDataCreate(unsupported, sizeof(unsupported) - 1);
+  if (expect(bad != NULL, KorSVGGetLastError()) ||
       expect(CGSVGDocumentCreateFromData(bad, NULL) == NULL,
              "unsupported SVG created a document") ||
-      expect(HermeneusGetLastError()[0] != 0,
+      expect(KorSVGGetLastError()[0] != 0,
              "unsupported SVG did not report an error")) {
     goto cleanup;
   }
-  HermeneusDataRelease(bad);
-  bad = HermeneusDataCreate(nonfinite_color, sizeof(nonfinite_color) - 1);
-  if (expect(bad != NULL, HermeneusGetLastError()) ||
+  KorSVGDataRelease(bad);
+  bad = KorSVGDataCreate(nonfinite_color, sizeof(nonfinite_color) - 1);
+  if (expect(bad != NULL, KorSVGGetLastError()) ||
       expect(CGSVGDocumentCreateFromData(bad, NULL) == NULL,
              "non-finite color created a document") ||
-      expect(HermeneusGetLastError()[0] != 0,
+      expect(KorSVGGetLastError()[0] != 0,
              "non-finite color did not report an error")) {
     goto cleanup;
   }
-  HermeneusDataRelease(bad);
-  bad = HermeneusDataCreate(huge_geometry, sizeof(huge_geometry) - 1);
-  if (expect(bad != NULL, HermeneusGetLastError())) {
+  KorSVGDataRelease(bad);
+  bad = KorSVGDataCreate(huge_geometry, sizeof(huge_geometry) - 1);
+  if (expect(bad != NULL, KorSVGGetLastError())) {
     goto cleanup;
   }
   if (expect(CGSVGDocumentCreateFromData(bad, NULL) == NULL,
              "huge geometry created a document") ||
-      expect(HermeneusGetLastError()[0] != 0,
+      expect(KorSVGGetLastError()[0] != 0,
              "huge geometry did not report an error")) {
     goto cleanup;
   }
   size = CGSVGDocumentGetCanvasSize(NULL);
   if (expect(size.width == 0 && size.height == 0,
              "null document returned a canvas") ||
-      expect(HermeneusGetLastError()[0] != 0,
+      expect(KorSVGGetLastError()[0] != 0,
              "null document did not report an error")) {
     goto cleanup;
   }
@@ -238,12 +238,12 @@ int main(int argument_count, char **arguments) {
   status = 0;
 
 cleanup:
-  HermeneusDataRelease(source);
-  HermeneusDataRelease(serialized);
-  HermeneusDataRelease(bad);
-  HermeneusURLRelease(url);
+  KorSVGDataRelease(source);
+  KorSVGDataRelease(serialized);
+  KorSVGDataRelease(bad);
+  KorSVGURLRelease(url);
   CGSVGDocumentRelease(loaded);
   CGSVGDocumentRelease(document);
-  HermeneusContextRelease(context);
+  KorSVGContextRelease(context);
   return status;
 }

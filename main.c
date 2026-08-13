@@ -1,4 +1,4 @@
-#include "hermeneus.h"
+#include "korsvg.h"
 
 #include <archetypon.h>
 
@@ -25,11 +25,11 @@ typedef uint64_t u64;
 typedef float f32;
 typedef double f64;
 
-#define HERMENEUS_MAX_SOURCE (32u * 1024u * 1024u)
-#define HERMENEUS_MAX_PATH 4096u
-#define HERMENEUS_MAX_PIXELS 16777216u
+#define KORSVG_MAX_SOURCE (32u * 1024u * 1024u)
+#define KORSVG_MAX_PATH 4096u
+#define KORSVG_MAX_PIXELS 16777216u
 
-struct HermeneusData {
+struct KorSVGData {
   atomic_uint references;
   u8 *bytes;
   size_t length;
@@ -37,12 +37,12 @@ struct HermeneusData {
   i32 writable;
 };
 
-struct HermeneusURL {
+struct KorSVGURL {
   atomic_uint references;
   char *path;
 };
 
-struct HermeneusContext {
+struct KorSVGContext {
   i32 width;
   i32 height;
   size_t stride;
@@ -60,19 +60,19 @@ struct CGSVGDocument {
   CGSize canvas_size;
 };
 
-static _Thread_local char hermeneus_error[256];
+static _Thread_local char korsvg_error[256];
 
 static i32 set_error(const char *format, ...) {
   va_list arguments;
 
   va_start(arguments, format);
-  vsnprintf(hermeneus_error, sizeof(hermeneus_error), format, arguments);
+  vsnprintf(korsvg_error, sizeof(korsvg_error), format, arguments);
   va_end(arguments);
   return 0;
 }
 
 static void clear_error(void) {
-  hermeneus_error[0] = 0;
+  korsvg_error[0] = 0;
 }
 
 static i32 checked_multiply(size_t left, size_t right, size_t *result) {
@@ -142,7 +142,7 @@ static i32 data_append(CFDataRef data, const u8 *bytes, size_t length) {
   return 1;
 }
 
-CFDataRef HermeneusDataCreate(const void *bytes, size_t length) {
+CFDataRef KorSVGDataCreate(const void *bytes, size_t length) {
   CFDataRef data;
 
   clear_error();
@@ -168,12 +168,12 @@ CFDataRef HermeneusDataCreate(const void *bytes, size_t length) {
   return data;
 }
 
-CFDataRef HermeneusDataCreateMutable(void) {
+CFDataRef KorSVGDataCreateMutable(void) {
   clear_error();
   return data_allocate(1);
 }
 
-CFDataRef HermeneusDataRetain(CFDataRef data) {
+CFDataRef KorSVGDataRetain(CFDataRef data) {
   clear_error();
   if (data == NULL) {
     set_error("cannot retain null data");
@@ -185,7 +185,7 @@ CFDataRef HermeneusDataRetain(CFDataRef data) {
   return data;
 }
 
-void HermeneusDataRelease(CFDataRef data) {
+void KorSVGDataRelease(CFDataRef data) {
   if (data != NULL &&
       atomic_fetch_sub_explicit(&data->references, 1, memory_order_acq_rel) ==
           1) {
@@ -194,19 +194,19 @@ void HermeneusDataRelease(CFDataRef data) {
   }
 }
 
-const u8 *HermeneusDataGetBytes(CFDataRef data) {
+const u8 *KorSVGDataGetBytes(CFDataRef data) {
   return data == NULL ? NULL : data->bytes;
 }
 
-size_t HermeneusDataGetLength(CFDataRef data) {
+size_t KorSVGDataGetLength(CFDataRef data) {
   return data == NULL ? 0 : data->length;
 }
 
-i32 HermeneusDataIsMutable(CFDataRef data) {
+i32 KorSVGDataIsMutable(CFDataRef data) {
   return data != NULL && data->writable;
 }
 
-CFURLRef HermeneusURLCreate(const char *path) {
+CFURLRef KorSVGURLCreate(const char *path) {
   size_t length;
   CFURLRef url;
 
@@ -216,7 +216,7 @@ CFURLRef HermeneusURLCreate(const char *path) {
     return NULL;
   }
   length = strlen(path);
-  if (length == 0 || length > HERMENEUS_MAX_PATH) {
+  if (length == 0 || length > KORSVG_MAX_PATH) {
     set_error("URL path length is invalid");
     return NULL;
   }
@@ -236,7 +236,7 @@ CFURLRef HermeneusURLCreate(const char *path) {
   return url;
 }
 
-CFURLRef HermeneusURLRetain(CFURLRef url) {
+CFURLRef KorSVGURLRetain(CFURLRef url) {
   clear_error();
   if (url == NULL) {
     set_error("cannot retain null URL");
@@ -248,7 +248,7 @@ CFURLRef HermeneusURLRetain(CFURLRef url) {
   return url;
 }
 
-void HermeneusURLRelease(CFURLRef url) {
+void KorSVGURLRelease(CFURLRef url) {
   if (url != NULL &&
       atomic_fetch_sub_explicit(&url->references, 1, memory_order_acq_rel) ==
           1) {
@@ -257,11 +257,11 @@ void HermeneusURLRelease(CFURLRef url) {
   }
 }
 
-const char *HermeneusURLGetPath(CFURLRef url) {
+const char *KorSVGURLGetPath(CFURLRef url) {
   return url == NULL ? NULL : url->path;
 }
 
-CGContextRef HermeneusContextCreate(i32 width, i32 height) {
+CGContextRef KorSVGContextCreate(i32 width, i32 height) {
   CGContextRef context;
   size_t pixels;
   size_t bytes;
@@ -269,7 +269,7 @@ CGContextRef HermeneusContextCreate(i32 width, i32 height) {
   clear_error();
   if (width <= 0 || height <= 0 ||
       !checked_multiply((size_t)width, (size_t)height, &pixels) ||
-      pixels > HERMENEUS_MAX_PIXELS || !checked_multiply(pixels, 4, &bytes)) {
+      pixels > KORSVG_MAX_PIXELS || !checked_multiply(pixels, 4, &bytes)) {
     set_error("context dimensions are invalid");
     return NULL;
   }
@@ -292,14 +292,14 @@ CGContextRef HermeneusContextCreate(i32 width, i32 height) {
   return context;
 }
 
-void HermeneusContextRelease(CGContextRef context) {
+void KorSVGContextRelease(CGContextRef context) {
   if (context != NULL) {
     free(context->pixels);
     free(context);
   }
 }
 
-i32 HermeneusContextSetViewport(CGContextRef context, i32 x, i32 y, i32 width,
+i32 KorSVGContextSetViewport(CGContextRef context, i32 x, i32 y, i32 width,
                                  i32 height) {
   clear_error();
   if (context == NULL || x < 0 || y < 0 || width <= 0 || height <= 0 ||
@@ -313,7 +313,7 @@ i32 HermeneusContextSetViewport(CGContextRef context, i32 x, i32 y, i32 width,
   return 1;
 }
 
-i32 HermeneusContextClear(CGContextRef context, u8 red, u8 green, u8 blue,
+i32 KorSVGContextClear(CGContextRef context, u8 red, u8 green, u8 blue,
                            u8 alpha) {
   size_t pixels;
   size_t index;
@@ -332,24 +332,24 @@ i32 HermeneusContextClear(CGContextRef context, u8 red, u8 green, u8 blue,
   return 1;
 }
 
-u8 *HermeneusContextGetData(CGContextRef context) {
+u8 *KorSVGContextGetData(CGContextRef context) {
   return context == NULL ? NULL : context->pixels;
 }
 
-size_t HermeneusContextGetStride(CGContextRef context) {
+size_t KorSVGContextGetStride(CGContextRef context) {
   return context == NULL ? 0 : context->stride;
 }
 
-i32 HermeneusContextGetWidth(CGContextRef context) {
+i32 KorSVGContextGetWidth(CGContextRef context) {
   return context == NULL ? 0 : context->width;
 }
 
-i32 HermeneusContextGetHeight(CGContextRef context) {
+i32 KorSVGContextGetHeight(CGContextRef context) {
   return context == NULL ? 0 : context->height;
 }
 
-const char *HermeneusGetLastError(void) {
-  return hermeneus_error;
+const char *KorSVGGetLastError(void) {
+  return korsvg_error;
 }
 
 CFTypeID CGSVGDocumentGetTypeID(void) {
@@ -367,7 +367,7 @@ CGSVGDocumentRef CGSVGDocumentCreateFromData(CFDataRef data,
   (void)options;
   clear_error();
   if (data == NULL || data->bytes == NULL || data->length == 0 ||
-      data->length > HERMENEUS_MAX_SOURCE) {
+      data->length > KORSVG_MAX_SOURCE) {
     set_error("SVG data is invalid");
     return NULL;
   }
@@ -418,7 +418,7 @@ CGSVGDocumentRef CGSVGDocumentCreateFromURL(CFURLRef url,
   clear_error();
   if (url == NULL || url->path == NULL || stat(url->path, &status) != 0 ||
       !S_ISREG(status.st_mode) || status.st_size <= 0 ||
-      (u64)status.st_size > HERMENEUS_MAX_SOURCE) {
+      (u64)status.st_size > KORSVG_MAX_SOURCE) {
     set_error("SVG URL is not a readable file");
     return NULL;
   }
@@ -445,13 +445,13 @@ CGSVGDocumentRef CGSVGDocumentCreateFromURL(CFURLRef url,
     set_error("cannot close SVG URL");
     return NULL;
   }
-  data = HermeneusDataCreate(bytes, length);
+  data = KorSVGDataCreate(bytes, length);
   free(bytes);
   if (data == NULL) {
     return NULL;
   }
   document = CGSVGDocumentCreateFromData(data, options);
-  HermeneusDataRelease(data);
+  KorSVGDataRelease(data);
   return document;
 }
 
