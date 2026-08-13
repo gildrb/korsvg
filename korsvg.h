@@ -4,7 +4,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-
 typedef uint64_t CFTypeID;
 typedef const void *CFDictionaryRef;
 typedef struct KorSVGData *CFDataRef;
@@ -13,8 +12,8 @@ typedef struct CGSVGDocument *CGSVGDocumentRef;
 typedef struct KorSVGContext *CGContextRef;
 
 typedef struct {
-  double width;
-  double height;
+	double width;
+	double height;
 } CGSize;
 
 CFDataRef KorSVGDataCreate(const void *bytes, size_t length);
@@ -33,9 +32,9 @@ const char *KorSVGURLGetPath(CFURLRef url);
 CGContextRef KorSVGContextCreate(int32_t width, int32_t height);
 void KorSVGContextRelease(CGContextRef context);
 int32_t KorSVGContextSetViewport(CGContextRef context, int32_t x, int32_t y,
-                                    int32_t width, int32_t height);
+				 int32_t width, int32_t height);
 int32_t KorSVGContextClear(CGContextRef context, uint8_t red, uint8_t green,
-                              uint8_t blue, uint8_t alpha);
+			    uint8_t blue, uint8_t alpha);
 uint8_t *KorSVGContextGetData(CGContextRef context);
 size_t KorSVGContextGetStride(CGContextRef context);
 int32_t KorSVGContextGetWidth(CGContextRef context);
@@ -45,18 +44,17 @@ const char *KorSVGGetLastError(void);
 
 CFTypeID CGSVGDocumentGetTypeID(void);
 CGSVGDocumentRef CGSVGDocumentCreateFromData(CFDataRef data,
-                                             CFDictionaryRef options);
+					     CFDictionaryRef options);
 CGSVGDocumentRef CGSVGDocumentCreateFromURL(CFURLRef url,
-                                            CFDictionaryRef options);
+					    CFDictionaryRef options);
 CGSVGDocumentRef CGSVGDocumentRetain(CGSVGDocumentRef document);
 void CGSVGDocumentRelease(CGSVGDocumentRef document);
 CGSize CGSVGDocumentGetCanvasSize(CGSVGDocumentRef document);
 void CGContextDrawSVGDocument(CGContextRef context,
-                              CGSVGDocumentRef document);
+			      CGSVGDocumentRef document);
 int32_t CGSVGDocumentWriteToData(CGSVGDocumentRef document, CFDataRef data,
-                                 CFDictionaryRef options);
+				 CFDictionaryRef options);
 int32_t CGSVGDocumentWriteToURL(CGSVGDocumentRef document, CFURLRef url,
-                                CFDictionaryRef options);
-
+				CFDictionaryRef options);
 
 #endif
