@@ -81,7 +81,7 @@ The test checks that the compatibility symbols are defined by `libkorsvg.a`, whi
 
 ```text
 korsvg/
-  korsvg.h       public opaque document, data, URL, and RGBA context API
+  korsvg.h          public opaque document, data, URL, and RGBA context API
   main.c            ownership, I/O, document calls, rendering, compositing
   tests/test.c      API, lifetime, pixel, round-trip, and rejection proof
   tests/test.sh     isolated execution and exported-symbol proof
