@@ -101,7 +101,9 @@ URL loading validates and reads the descriptor returned by one `open` call, so p
 
 Document creation performs a one-pixel probe render. This forces unsupported rendering elements and properties to fail at creation rather than survive as deferred draw-time failures. The retained source remains byte-for-byte stable for serialization.
 
-Supported SVG geometry, paths, transforms, solid paints, element opacity, fill rules, solid strokes, and round stroke joins are provided by Archetypon. Container opacity, dashed strokes, miter joins, and bevel joins are rejected. Gradients, text, external resources, filters, masks, patterns, clipping paths, CSS stylesheets, and nested viewports remain outside the renderer.
+Archetypon provides geometry, paths, transforms, solid and linear-gradient paints, inherited presentation styles, embedded simple CSS selectors, group and element opacity, fill and clip rules, dashed strokes with round/miter/bevel joins, clipping paths, and luminance or alpha masks. Retained group commands isolate container opacity, clipping, and masking before KorSVG caches the completed size-specific plan.
+
+Unsupported features fail during document creation rather than rendering partially. These currently include text, images, external resources, radial gradients, filters, patterns, nested viewports, complex CSS selectors, nested clip/mask content, and non-pad gradient spread modes.
 
 ## Verification
 

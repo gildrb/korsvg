@@ -34,9 +34,6 @@ static const char huge_circle[] =
 static const char huge_arc[] =
 	"<svg viewBox=\"0 0 1 1\"><path "
 	"d=\"M0 0 A1e308 1e308 0 0 1 1 1 Z\"/></svg>";
-static const char group_opacity[] =
-	"<svg viewBox=\"0 0 1 1\"><g opacity=\"0.5\"><rect width=\"1\" "
-	"height=\"1\"/></g></svg>";
 static const char trailing_element[] =
 	"<svg viewBox=\"0 0 1 1\"></svg><rect width=\"1\" height=\"1\"/>";
 static const char mismatched_close[] =
@@ -344,8 +341,6 @@ static int test_rejections(struct test_fixture *fixture)
 				   "huge circle created a document") ||
 	       expect_rejected_svg(huge_arc, sizeof(huge_arc) - 1,
 				   "huge arc created a document") ||
-	       expect_rejected_svg(group_opacity, sizeof(group_opacity) - 1,
-				   "group opacity created a document") ||
 	       expect_rejected_svg(trailing_element,
 				   sizeof(trailing_element) - 1,
 				   "trailing element created a document") ||
