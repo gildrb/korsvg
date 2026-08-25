@@ -14,8 +14,11 @@ ARCHETYPON_SOURCES := $(wildcard $(ARCHETYPON_DIR)/src/*.c)
 ARCHETYPON_OBJECTS := $(patsubst $(ARCHETYPON_DIR)/src/%.c,build/archetypon/%.o,$(ARCHETYPON_SOURCES))
 ARCHETYPON_LIBRARY := build/libarchetypon.a
 OBJECTS := build/main.o
+FUZZ_CC ?= clang
+FUZZ_CFLAGS ?= -std=c11 -O1 -g -fno-omit-frame-pointer \
+	-fsanitize=fuzzer,address,undefined
 
-.PHONY: all clean install test
+.PHONY: all clean fixtures fuzz install test
 
 all: $(ARCHETYPON_LIBRARY) libkorsvg.a
 
@@ -46,6 +49,23 @@ build/test_cpp: tests/test_cpp.cpp korsvg.h libkorsvg.a $(ARCHETYPON_LIBRARY)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) tests/test_cpp.cpp libkorsvg.a \
 		$(ARCHETYPON_LIBRARY) $(LDFLAGS) $(LDLIBS) -o "$@"
 
+build/regression: tests/regression.c korsvg.h libkorsvg.a $(ARCHETYPON_LIBRARY)
+	mkdir -p build
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/regression.c libkorsvg.a \
+		$(ARCHETYPON_LIBRARY) $(LDFLAGS) $(LDLIBS) -o "$@"
+
+fixtures:
+	./tests/generate_fixtures.sh
+
+fuzz: build/fuzz
+
+build/fuzz: tests/fuzz.c main.c korsvg.h $(ARCHETYPON_HEADER) \
+             $(ARCHETYPON_SOURCES)
+	mkdir -p build
+	$(FUZZ_CC) $(CPPFLAGS) -I"$(ARCHETYPON_DIR)" $(FUZZ_CFLAGS) \
+		tests/fuzz.c main.c $(ARCHETYPON_SOURCES) $(LDFLAGS) $(LDLIBS) \
+		-o "$@"
+
 build/korsvg.pc: Makefile
 	mkdir -p build
 	printf '%s\n' \
@@ -60,7 +80,7 @@ build/korsvg.pc: Makefile
 		'Libs: -L$${libdir} -lkorsvg -larchetypon -lm' \
 		'Cflags: -I$${includedir}' > "$@"
 
-test: build/test build/test_cpp
+test: build/test build/test_cpp build/regression
 	./tests/test.sh
 
 install: all build/korsvg.pc

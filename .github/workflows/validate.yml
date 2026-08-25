@@ -1,0 +1,80 @@
+name: validate
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            cc: gcc
+            cxx: g++
+          - os: ubuntu-latest
+            cc: clang
+            cxx: clang++
+          - os: macos-latest
+            cc: clang
+            cxx: clang++
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: korsvg
+      - uses: actions/checkout@v4
+        with:
+          repository: gildrb/archetypon
+          path: archetypon
+      - name: Build and test C and C++ consumers
+        working-directory: korsvg
+        run: make test CC=${{ matrix.cc }} CXX=${{ matrix.cxx }}
+      - name: Check generated fixtures
+        working-directory: korsvg
+        run: |
+          make fixtures
+          git diff --exit-code -- tests/fixtures
+
+  sanitizers:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: korsvg
+      - uses: actions/checkout@v4
+        with:
+          repository: gildrb/archetypon
+          path: archetypon
+      - name: Test with ASan and UBSan
+        working-directory: korsvg
+        env:
+          ASAN_OPTIONS: detect_leaks=0:strict_string_checks=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: |
+          make test CC=clang CXX=clang++ \
+            CFLAGS='-std=c11 -O1 -g -Wall -Wextra -Wpedantic -fno-omit-frame-pointer -fsanitize=address,undefined' \
+            CXXFLAGS='-std=c++11 -O1 -g -Wall -Wextra -Wpedantic -fno-omit-frame-pointer -fsanitize=address,undefined' \
+            LDFLAGS='-fsanitize=address,undefined'
+
+  fuzz-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: korsvg
+      - uses: actions/checkout@v4
+        with:
+          repository: gildrb/archetypon
+          path: archetypon
+      - name: Build libFuzzer harness
+        working-directory: korsvg
+        run: make fuzz

@@ -93,7 +93,20 @@ Supported SVG geometry, paths, transforms, solid paints, element opacity, fill r
 4. byte-exact data and file serialization plus URL reloading;
 5. rejection of malformed structure, non-finite geometry, unsupported effects, null inputs, and immutable-destination operations.
 
-The test checks that the public symbols are defined by `libkorsvg.a`, while the renderer symbols remain undefined Archetypon dependencies. It also checks C++ linkage and a staged installed consumer. Symbol checks work with GNU and Darwin `nm` output. `cc`, `clang`, ASan, and UBSan builds are supported through conventional tool variables.
+The test checks that the public symbols are defined by `libkorsvg.a`, while the renderer symbols remain undefined Archetypon dependencies. It also checks C++ linkage, a staged installed consumer, and generated render fixtures for geometry, transforms, paint and stroke styles, aspect-ratio mapping, and alpha compositing. Symbol checks work with GNU and Darwin `nm` output. Regenerate the committed fixtures with `make fixtures`.
+
+GitHub Actions runs the C and C++ tests with GCC and Clang on Linux and with Clang on macOS. Separate jobs run ASan and UBSan where supported and verify that generated fixtures are current.
+
+## Fuzzing
+
+Clang with libFuzzer support can build the document create/draw harness:
+
+```sh
+make fuzz
+./build/fuzz tests/fixtures -max_len=1048576 -timeout=10
+```
+
+The harness passes arbitrary bytes through document creation and, for accepted documents, draws into a context whose width and height are each bounded to 64 pixels. The `-max_len` example also bounds individual inputs. Sanitized Archetypon and KorSVG sources are compiled directly into the harness with ASan and UBSan.
 
 ## Files
 
@@ -103,6 +116,9 @@ korsvg/
   main.c            ownership, I/O, document calls, rendering, compositing
   tests/test.c      API, lifetime, pixel, round-trip, and rejection proof
   tests/test_cpp.cpp C++ header and linkage proof
+  tests/regression.c generated SVG pixel and canvas regression proof
+  tests/fuzz.c      bounded libFuzzer document create/draw harness
+  tests/fixtures/   generated representative SVG corpus
   tests/test.sh     execution, install, and portable exported-symbol proof
   Makefile          KorSVG build plus Archetypon dependency linkage
   LICENSE           MIT terms

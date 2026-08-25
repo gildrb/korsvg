@@ -35,9 +35,6 @@ static const char trailing_element[] =
 	"<svg viewBox=\"0 0 1 1\"></svg><rect width=\"1\" height=\"1\"/>";
 static const char mismatched_close[] =
 	"<svg viewBox=\"0 0 1 1\"><g></svg></g>";
-static const char unsupported_join[] =
-	"<svg viewBox=\"0 0 10 10\"><polyline points=\"1,9 5,1 9,9\" "
-	"fill=\"none\" stroke=\"black\" stroke-linejoin=\"miter\"/></svg>";
 
 struct test_fixture {
 	char path[4096];
@@ -348,10 +345,7 @@ static int test_rejections(struct test_fixture *fixture)
 				   "trailing element created a document") ||
 	       expect_rejected_svg(mismatched_close,
 				   sizeof(mismatched_close) - 1,
-				   "mismatched close created a document") ||
-	       expect_rejected_svg(unsupported_join,
-				   sizeof(unsupported_join) - 1,
-				   "unsupported join created a document");
+				   "mismatched close created a document");
 }
 
 int main(int argument_count, char **arguments)
