@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <math.h>
+#include <pthread.h>
 #include <stdarg.h>
 #include <stdatomic.h>
 #include <stdint.h>
@@ -25,6 +26,7 @@ typedef uint64_t u64;
 #define KORSVG_MAX_SOURCE (32u * 1024u * 1024u)
 #define KORSVG_MAX_PATH 4096u
 #define KORSVG_MAX_PIXELS 16777216u
+#define KORSVG_PLAN_CACHE_LIMIT (32u * 1024u * 1024u)
 
 struct KorSVGData {
 	atomic_uint references;
@@ -50,11 +52,23 @@ struct KorSVGContext {
 	s32 viewport_height;
 };
 
+struct plan_cache_entry {
+	s32 width;
+	s32 height;
+	u64 stamp;
+	struct archetypon_svg_plan *plan;
+};
+
 struct KorSVGDocument {
 	atomic_uint references;
-	u8 *source;
-	size_t source_length;
 	KorSVGSize canvas_size;
+	struct archetypon_svg_document *scene;
+	pthread_mutex_t cache_mutex;
+	pthread_mutex_t build_mutex;
+	struct plan_cache_entry cache[2];
+	size_t cache_cost;
+	size_t cache_limit;
+	u64 cache_clock;
 };
 
 static _Thread_local char korsvg_error[256];
@@ -375,30 +389,40 @@ KorSVGTypeID KorSVGDocumentGetTypeID(void)
 	return UINT64_C(0x4347535647444f43);
 }
 
-static s32 validate_svg_data(KorSVGDataRef data, double *width, double *height)
+static struct archetypon_svg_document *parse_svg_data(
+	KorSVGDataRef data, double *width, double *height)
 {
-	struct archetypon_image probe = { 0 };
+	struct archetypon_svg_document *scene;
+	struct archetypon_svg_plan *probe;
 	char error[256] = { 0 };
 
 	if (!data || !data->bytes || data->length == 0 ||
-	    data->length > KORSVG_MAX_SOURCE)
-		return set_error("SVG data is invalid");
-	if (memchr(data->bytes, 0, data->length))
-		return set_error("SVG data contains a null byte");
-	if (archetypon_svg_canvas_size((const char *)data->bytes, data->length,
-				       width, height, error, sizeof(error)) ||
-	    !isfinite(*width) || !isfinite(*height) || *width <= 0 ||
-	    *height <= 0)
-		return set_error("%s", error[0] == 0 ?
-				"SVG canvas is invalid" : error);
-	if (archetypon_svg_render((const char *)data->bytes, data->length, 1, 1,
-				  &probe, error, sizeof(error))) {
-		archetypon_image_free(&probe);
-		return set_error("%s",
-				error[0] == 0 ? "SVG parse failed" : error);
+	    data->length > KORSVG_MAX_SOURCE) {
+		set_error("SVG data is invalid");
+		return NULL;
 	}
-	archetypon_image_free(&probe);
-	return 1;
+	if (memchr(data->bytes, 0, data->length)) {
+		set_error("SVG data contains a null byte");
+		return NULL;
+	}
+	scene = archetypon_svg_document_create((const char *)data->bytes,
+					       data->length, error,
+					       sizeof(error));
+	if (!scene || archetypon_svg_document_canvas_size(scene, width, height) ||
+	    !isfinite(*width) || !isfinite(*height) || *width <= 0 ||
+	    *height <= 0) {
+		archetypon_svg_document_free(scene);
+		set_error("%s", error[0] ? error : "SVG canvas is invalid");
+		return NULL;
+	}
+	probe = archetypon_svg_plan_create(scene, 1, 1, error, sizeof(error));
+	if (!probe) {
+		archetypon_svg_document_free(scene);
+		set_error("%s", error[0] ? error : "SVG parse failed");
+		return NULL;
+	}
+	archetypon_svg_plan_release(probe);
+	return scene;
 }
 
 KorSVGDocumentRef KorSVGDocumentCreateFromData(KorSVGDataRef data,
@@ -407,24 +431,35 @@ KorSVGDocumentRef KorSVGDocumentCreateFromData(KorSVGDataRef data,
 	KorSVGDocumentRef document;
 	double width;
 	double height;
+	struct archetypon_svg_document *scene;
 
 	(void)options;
 	clear_error();
-	if (!validate_svg_data(data, &width, &height))
+
+	scene = parse_svg_data(data, &width, &height);
+	if (!scene)
 		return NULL;
 	document = (KorSVGDocumentRef)calloc(1, sizeof(*document));
 	if (!document) {
+		archetypon_svg_document_free(scene);
 		set_error("out of memory creating SVG document");
 		return NULL;
 	}
-	document->source = (u8 *)malloc(data->length);
-	if (!document->source) {
+	if (pthread_mutex_init(&document->cache_mutex, NULL) != 0) {
+		archetypon_svg_document_free(scene);
 		free(document);
-		set_error("out of memory copying SVG document");
+		set_error("cannot initialize SVG plan cache");
 		return NULL;
 	}
-	memcpy(document->source, data->bytes, data->length);
-	document->source_length = data->length;
+	if (pthread_mutex_init(&document->build_mutex, NULL) != 0) {
+		pthread_mutex_destroy(&document->cache_mutex);
+		archetypon_svg_document_free(scene);
+		free(document);
+		set_error("cannot initialize SVG plan builder");
+		return NULL;
+	}
+	document->scene = scene;
+	document->cache_limit = KORSVG_PLAN_CACHE_LIMIT;
 	document->canvas_size = (KorSVGSize){width, height};
 	atomic_init(&document->references, 1);
 	return document;
@@ -535,7 +570,11 @@ void KorSVGDocumentRelease(KorSVGDocumentRef document)
 	if (atomic_fetch_sub_explicit(&document->references, 1,
 				      memory_order_acq_rel) != 1)
 		return;
-	free(document->source);
+	archetypon_svg_plan_release(document->cache[0].plan);
+	archetypon_svg_plan_release(document->cache[1].plan);
+	pthread_mutex_destroy(&document->build_mutex);
+	pthread_mutex_destroy(&document->cache_mutex);
+	archetypon_svg_document_free(document->scene);
 	free(document);
 }
 
@@ -578,40 +617,171 @@ static void composite_pixel(u8 *destination, const u8 *source)
 	destination[3] = (u8)output_alpha;
 }
 
+static struct archetypon_svg_plan *cached_document_plan(
+	KorSVGDocumentRef document, s32 width, s32 height)
+{
+	struct archetypon_svg_plan *plan = NULL;
+	size_t index;
+
+	pthread_mutex_lock(&document->cache_mutex);
+	for (index = 0; index < 2; index++) {
+		if (document->cache[index].plan &&
+		    document->cache[index].width == width &&
+		    document->cache[index].height == height) {
+			document->cache[index].stamp = ++document->cache_clock;
+			plan = archetypon_svg_plan_retain(
+				document->cache[index].plan);
+			break;
+		}
+	}
+	pthread_mutex_unlock(&document->cache_mutex);
+	return plan;
+}
+
+static struct archetypon_svg_plan *document_plan(KorSVGDocumentRef document,
+						  s32 width, s32 height,
+						  char *error,
+						  size_t error_capacity)
+{
+	struct archetypon_svg_plan *built;
+	struct archetypon_svg_plan *discard[2] = { NULL, NULL };
+	size_t discard_count = 0;
+	size_t cost;
+	size_t index;
+
+	built = cached_document_plan(document, width, height);
+	if (built)
+		return built;
+	pthread_mutex_lock(&document->build_mutex);
+	built = cached_document_plan(document, width, height);
+	if (built) {
+		pthread_mutex_unlock(&document->build_mutex);
+		return built;
+	}
+	built = archetypon_svg_plan_create(document->scene, width, height, error,
+					   error_capacity);
+	if (!built) {
+		pthread_mutex_unlock(&document->build_mutex);
+		return NULL;
+	}
+	cost = archetypon_svg_plan_cost(built);
+	pthread_mutex_lock(&document->cache_mutex);
+	if (cost > document->cache_limit) {
+		pthread_mutex_unlock(&document->cache_mutex);
+		pthread_mutex_unlock(&document->build_mutex);
+		return built;
+	}
+	while (document->cache_cost + cost > document->cache_limit) {
+		size_t victim = !document->cache[0].plan ? 1 :
+			(!document->cache[1].plan ? 0 :
+			 (document->cache[0].stamp <= document->cache[1].stamp ?
+			  0 : 1));
+
+		if (!document->cache[victim].plan)
+			break;
+		document->cache_cost -= archetypon_svg_plan_cost(
+			document->cache[victim].plan);
+		discard[discard_count++] = document->cache[victim].plan;
+		memset(&document->cache[victim], 0,
+		       sizeof(document->cache[victim]));
+	}
+	index = !document->cache[0].plan ? 0 :
+		(!document->cache[1].plan ? 1 :
+		 (document->cache[0].stamp <= document->cache[1].stamp ? 0 : 1));
+	if (document->cache[index].plan) {
+		document->cache_cost -= archetypon_svg_plan_cost(
+			document->cache[index].plan);
+		discard[discard_count++] = document->cache[index].plan;
+	}
+	document->cache[index].width = width;
+	document->cache[index].height = height;
+	document->cache[index].stamp = ++document->cache_clock;
+	document->cache[index].plan = built;
+	document->cache_cost += cost;
+	if (!archetypon_svg_plan_retain(built)) {
+		document->cache_cost -= cost;
+		memset(&document->cache[index], 0,
+		       sizeof(document->cache[index]));
+		pthread_mutex_unlock(&document->cache_mutex);
+		pthread_mutex_unlock(&document->build_mutex);
+		for (index = 0; index < discard_count; index++)
+			archetypon_svg_plan_release(discard[index]);
+		archetypon_svg_plan_release(built);
+		snprintf(error, error_capacity,
+			 "SVG plan reference count overflow");
+		return NULL;
+	}
+	pthread_mutex_unlock(&document->cache_mutex);
+	pthread_mutex_unlock(&document->build_mutex);
+	for (index = 0; index < discard_count; index++)
+		archetypon_svg_plan_release(discard[index]);
+	return built;
+}
+
 s32 KorSVGContextDrawDocument(KorSVGContextRef context,
 			      KorSVGDocumentRef document)
 {
-	struct archetypon_image image = { 0 };
+	struct archetypon_svg_plan *plan;
+	const u8 *pixels;
 	char error[256] = { 0 };
+	s32 width;
+	s32 height;
 	s32 y;
 
 	clear_error();
-	if (!context || !document) {
+	if (!context || !document)
 		return set_error("context and SVG document are required");
-	}
-	if (archetypon_svg_render((const char *)document->source,
-				   document->source_length,
-				   context->viewport_width,
-				   context->viewport_height, &image, error,
-				   sizeof(error))) {
-		archetypon_image_free(&image);
-		return set_error("%s", error[0] == 0 ? "SVG draw failed" : error);
-	}
-	for (y = 0; y < image.height; y++) {
+	plan = document_plan(document, context->viewport_width,
+			     context->viewport_height, error, sizeof(error));
+	if (!plan)
+		return set_error("%s", error[0] ? error : "SVG draw failed");
+	width = archetypon_svg_plan_width(plan);
+	height = archetypon_svg_plan_height(plan);
+	pixels = archetypon_svg_plan_pixels(plan);
+	for (y = 0; y < height; y++) {
 		s32 x;
 		u8 *destination = context->pixels;
-		const u8 *source = image.pixels + (size_t)y * image.width * 4;
+		const u8 *source = pixels + (size_t)y * width * 4;
 
 		destination +=
 			(size_t)(context->viewport_y + y) * context->stride;
 		destination += (size_t)context->viewport_x * 4;
-		for (x = 0; x < image.width; x++) {
+		for (x = 0; x < width; x++)
 			composite_pixel(destination + (size_t)x * 4,
 					source + (size_t)x * 4);
-		}
 	}
-	archetypon_image_free(&image);
+	archetypon_svg_plan_release(plan);
 	return 1;
+}
+
+void KorSVGDocumentSetPlanCacheLimit(KorSVGDocumentRef document,
+					       size_t bytes)
+{
+	struct archetypon_svg_plan *plans[2];
+
+	if (!document)
+		return;
+	pthread_mutex_lock(&document->cache_mutex);
+	plans[0] = document->cache[0].plan;
+	plans[1] = document->cache[1].plan;
+	memset(document->cache, 0, sizeof(document->cache));
+	document->cache_cost = 0;
+	document->cache_limit = bytes;
+	pthread_mutex_unlock(&document->cache_mutex);
+	archetypon_svg_plan_release(plans[0]);
+	archetypon_svg_plan_release(plans[1]);
+}
+
+size_t KorSVGDocumentGetPlanCacheCost(KorSVGDocumentRef document)
+{
+	size_t cost;
+
+	if (!document)
+		return 0;
+	pthread_mutex_lock(&document->cache_mutex);
+	cost = document->cache_cost;
+	pthread_mutex_unlock(&document->cache_mutex);
+	return cost;
 }
 
 s32 KorSVGDocumentWriteToData(KorSVGDocumentRef document, KorSVGDataRef data,
@@ -621,7 +791,9 @@ s32 KorSVGDocumentWriteToData(KorSVGDocumentRef document, KorSVGDataRef data,
 	clear_error();
 	if (!document)
 		return set_error("SVG document is missing");
-	return data_append(data, document->source, document->source_length);
+	return data_append(data,
+		archetypon_svg_document_source(document->scene),
+		archetypon_svg_document_source_length(document->scene));
 }
 
 s32 KorSVGDocumentWriteToURL(KorSVGDocumentRef document, KorSVGURLRef url,
@@ -629,8 +801,10 @@ s32 KorSVGDocumentWriteToURL(KorSVGDocumentRef document, KorSVGURLRef url,
 {
 	static const char suffix[] = ".korsvg.XXXXXX";
 	struct stat destination_status;
+	const u8 *source;
 	char *temporary;
 	size_t path_length;
+	size_t source_length;
 	size_t written = 0;
 	ssize_t count;
 	s32 success;
@@ -641,6 +815,8 @@ s32 KorSVGDocumentWriteToURL(KorSVGDocumentRef document, KorSVGURLRef url,
 	clear_error();
 	if (!document || !url || !url->path)
 		return set_error("SVG document and URL are required");
+	source = archetypon_svg_document_source(document->scene);
+	source_length = archetypon_svg_document_source_length(document->scene);
 	path_length = strlen(url->path);
 	if (path_length > SIZE_MAX - sizeof(suffix))
 		return set_error("SVG URL path is too long");
@@ -665,9 +841,9 @@ s32 KorSVGDocumentWriteToURL(KorSVGDocumentRef document, KorSVGURLRef url,
 		free(temporary);
 		return 0;
 	}
-	while (written < document->source_length) {
-		count = write(descriptor, document->source + written,
-			      document->source_length - written);
+	while (written < source_length) {
+		count = write(descriptor, source + written,
+			      source_length - written);
 		if (count > 0) {
 			written += (size_t)count;
 			continue;

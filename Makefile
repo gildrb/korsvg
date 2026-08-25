@@ -6,6 +6,7 @@ CFLAGS ?= -std=c11 -O2 -Wall -Wextra -Wpedantic
 CXXFLAGS ?= -std=c++11 -O2 -Wall -Wextra -Wpedantic
 LDFLAGS ?=
 LDLIBS ?= -lm
+THREAD_FLAGS ?= -pthread
 PREFIX ?= /usr/local
 ARCHETYPON_DIR ?= ../archetypon
 
@@ -33,26 +34,26 @@ $(ARCHETYPON_LIBRARY): $(ARCHETYPON_OBJECTS)
 build/archetypon/%.o: $(ARCHETYPON_DIR)/src/%.c $(ARCHETYPON_HEADER) \
                        $(ARCHETYPON_DIR)/src/internal.h
 	mkdir -p build/archetypon
-	$(CC) $(CPPFLAGS) -I"$(ARCHETYPON_DIR)" $(CFLAGS) -c "$<" -o "$@"
+	$(CC) $(CPPFLAGS) -I"$(ARCHETYPON_DIR)" $(CFLAGS) $(THREAD_FLAGS) -c "$<" -o "$@"
 
 build/main.o: main.c korsvg.h $(ARCHETYPON_HEADER)
 	mkdir -p build
-	$(CC) $(CPPFLAGS) -I"$(ARCHETYPON_DIR)" $(CFLAGS) -c "$<" -o "$@"
+	$(CC) $(CPPFLAGS) -I"$(ARCHETYPON_DIR)" $(CFLAGS) $(THREAD_FLAGS) -c "$<" -o "$@"
 
 build/test: tests/test.c korsvg.h libkorsvg.a $(ARCHETYPON_LIBRARY)
 	mkdir -p build
-	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test.c libkorsvg.a \
-		$(ARCHETYPON_LIBRARY) $(LDFLAGS) $(LDLIBS) -o "$@"
+	$(CC) $(CPPFLAGS) -I"$(ARCHETYPON_DIR)" $(CFLAGS) $(THREAD_FLAGS) tests/test.c libkorsvg.a \
+		$(ARCHETYPON_LIBRARY) $(LDFLAGS) $(THREAD_FLAGS) $(LDLIBS) -o "$@"
 
 build/test_cpp: tests/test_cpp.cpp korsvg.h libkorsvg.a $(ARCHETYPON_LIBRARY)
 	mkdir -p build
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) tests/test_cpp.cpp libkorsvg.a \
-		$(ARCHETYPON_LIBRARY) $(LDFLAGS) $(LDLIBS) -o "$@"
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(THREAD_FLAGS) tests/test_cpp.cpp libkorsvg.a \
+		$(ARCHETYPON_LIBRARY) $(LDFLAGS) $(THREAD_FLAGS) $(LDLIBS) -o "$@"
 
 build/regression: tests/regression.c korsvg.h libkorsvg.a $(ARCHETYPON_LIBRARY)
 	mkdir -p build
-	$(CC) $(CPPFLAGS) $(CFLAGS) tests/regression.c libkorsvg.a \
-		$(ARCHETYPON_LIBRARY) $(LDFLAGS) $(LDLIBS) -o "$@"
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(THREAD_FLAGS) tests/regression.c libkorsvg.a \
+		$(ARCHETYPON_LIBRARY) $(LDFLAGS) $(THREAD_FLAGS) $(LDLIBS) -o "$@"
 
 fixtures:
 	./tests/generate_fixtures.sh
@@ -63,7 +64,7 @@ build/fuzz: tests/fuzz.c main.c korsvg.h $(ARCHETYPON_HEADER) \
              $(ARCHETYPON_SOURCES)
 	mkdir -p build
 	$(FUZZ_CC) $(CPPFLAGS) -I"$(ARCHETYPON_DIR)" $(FUZZ_CFLAGS) \
-		tests/fuzz.c main.c $(ARCHETYPON_SOURCES) $(LDFLAGS) $(LDLIBS) \
+		tests/fuzz.c main.c $(ARCHETYPON_SOURCES) $(LDFLAGS) $(THREAD_FLAGS) $(LDLIBS) \
 		-o "$@"
 
 build/korsvg.pc: Makefile
@@ -77,7 +78,7 @@ build/korsvg.pc: Makefile
 		'Name: KorSVG' \
 		'Description: Portable C SVG document and RGBA rendering API' \
 		'Version: 1.0.0' \
-		'Libs: -L$${libdir} -lkorsvg -larchetypon -lm' \
+		'Libs: -L$${libdir} -lkorsvg -larchetypon -pthread -lm' \
 		'Cflags: -I$${includedir}' > "$@"
 
 test: build/test build/test_cpp build/regression

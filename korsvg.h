@@ -61,6 +61,9 @@ int32_t KorSVGDocumentWriteToData(KorSVGDocumentRef document, KorSVGDataRef data
 int32_t KorSVGDocumentWriteToURL(KorSVGDocumentRef document, KorSVGURLRef url,
 				KorSVGOptionsRef options);
 
+void KorSVGDocumentSetPlanCacheLimit(KorSVGDocumentRef document, size_t bytes);
+size_t KorSVGDocumentGetPlanCacheCost(KorSVGDocumentRef document);
+
 #ifdef __cplusplus
 }
 #endif

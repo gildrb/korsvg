@@ -17,7 +17,7 @@ The default build expects both repositories under the same parent directory. Set
 The build produces `libkorsvg.a`. It contains the document adapter only; consumers link it with `libarchetypon.a` and the system math runtime:
 
 ```sh
-cc app.c -I. libkorsvg.a build/libarchetypon.a -lm
+cc app.c -I. libkorsvg.a build/libarchetypon.a -pthread -lm
 ```
 
 Install both static libraries, the public headers, and `korsvg.pc` with:
@@ -27,7 +27,7 @@ make install PREFIX=/usr/local
 cc app.c $(pkg-config --cflags --libs korsvg)
 ```
 
-`DESTDIR` is supported for staged packaging. The pkg-config link flags propagate the Archetypon and math dependencies.
+`DESTDIR` is supported for staged packaging. The pkg-config link flags propagate the Archetypon, pthread, and math dependencies.
 
 ## Document surface
 
@@ -69,6 +69,26 @@ KorSVGDataRelease(data);
 
 The context is straight-alpha RGBA with an explicit stride. Its default viewport is the full image. `KorSVGContextClear` initializes all pixels, and `KorSVGContextSetViewport` bounds the next and subsequent draws. Diagnostics are thread-local and available through `KorSVGGetLastError`.
 
+## Retained plans
+
+Each document owns one parsed Archetypon document. Its immutable source copy is
+also used for exact serialization, so KorSVG does not retain a duplicate. Draws
+use a mutex-protected two-entry LRU of immutable size-specific plans. The combined
+cache cost is limited to 32 MiB. A plan larger than that limit is used for the
+current draw but is not cached. `KorSVGDocumentSetPlanCacheLimit` lets an app lower
+or raise the per-document bound; changing it clears existing entries.
+`KorSVGDocumentGetPlanCacheCost` reports current retained plan bytes.
+
+The cache mutex only protects lookup and publication. A separate build mutex
+single-flights cold plans, preventing duplicate peak allocations. Cached draws
+and compositing do not hold either mutex. Plans have atomic references, so eviction
+cannot invalidate an in-progress draw.
+
+The Archetypon document stores the compiled XML hierarchy, inherited styles,
+visibility, and transforms. A new-size plan still parses numeric shape/path
+geometry, flattens curves, rasterizes, and stores completed RGBA pixels. Cache
+hits repeat none of that work.
+
 ## Concurrency
 
 Data created with `KorSVGDataCreate`, URLs, and documents are immutable after creation. Separate threads may read them concurrently. Their retain and release operations use atomic reference counts, but each thread must own a reference for the full duration of its use. The final release must not overlap any use.
@@ -95,7 +115,7 @@ Supported SVG geometry, paths, transforms, solid paints, element opacity, fill r
 
 The test checks that the public symbols are defined by `libkorsvg.a`, while the renderer symbols remain undefined Archetypon dependencies. It also checks C++ linkage, a staged installed consumer, and generated render fixtures for geometry, transforms, paint and stroke styles, aspect-ratio mapping, and alpha compositing. Symbol checks work with GNU and Darwin `nm` output. Regenerate the committed fixtures with `make fixtures`.
 
-GitHub Actions runs the C and C++ tests with GCC and Clang on Linux and with Clang on macOS. Separate jobs run ASan and UBSan where supported and verify that generated fixtures are current.
+GitHub Actions runs the C and C++ tests with GCC and Clang on Linux and with Clang on macOS. Separate jobs run ASan, UBSan, and Linux ThreadSanitizer, build the fuzz target, and verify that generated fixtures are current.
 
 ## Fuzzing
 

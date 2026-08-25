@@ -65,6 +65,26 @@ jobs:
             CXXFLAGS='-std=c++11 -O1 -g -Wall -Wextra -Wpedantic -fno-omit-frame-pointer -fsanitize=address,undefined' \
             LDFLAGS='-fsanitize=address,undefined'
 
+  thread-sanitizer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: korsvg
+      - uses: actions/checkout@v4
+        with:
+          repository: gildrb/archetypon
+          path: archetypon
+      - name: Test retained plans with ThreadSanitizer
+        working-directory: korsvg
+        env:
+          TSAN_OPTIONS: halt_on_error=1
+        run: |
+          make test CC=clang CXX=clang++ \
+            CFLAGS='-std=c11 -O1 -g -Wall -Wextra -Wpedantic -fno-omit-frame-pointer -fsanitize=thread' \
+            CXXFLAGS='-std=c++11 -O1 -g -Wall -Wextra -Wpedantic -fno-omit-frame-pointer -fsanitize=thread' \
+            LDFLAGS='-fsanitize=thread'
+
   fuzz-build:
     runs-on: ubuntu-latest
     steps:

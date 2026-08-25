@@ -1,14 +1,20 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "../korsvg.h"
+#include <archetypon.h>
 
 #include <fcntl.h>
 #include <signal.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+void archetypon_svg_counters_reset(void);
+size_t archetypon_svg_document_compile_count(void);
+size_t archetypon_svg_plan_compile_count(void);
 
 static const char svg[] =
 	"<svg viewBox=\"0 0 40 20\"><rect width=\"20\" height=\"20\" "
@@ -348,6 +354,142 @@ static int test_rejections(struct test_fixture *fixture)
 				   "mismatched close created a document");
 }
 
+struct draw_thread {
+	KorSVGDocumentRef document;
+	int status;
+};
+
+static void *draw_in_thread(void *opaque)
+{
+	struct draw_thread *thread = opaque;
+	KorSVGContextRef context = KorSVGContextCreate(64, 32);
+
+	thread->status = context &&
+		KorSVGContextDrawDocument(context, thread->document);
+	KorSVGContextRelease(context);
+	return NULL;
+}
+
+static void *change_cache_limit(void *opaque)
+{
+	KorSVGDocumentRef document = opaque;
+	size_t index;
+
+	for (index = 0; index < 200; index++)
+		KorSVGDocumentSetPlanCacheLimit(document,
+			index % 2 ? 32u * 1024u * 1024u : 0);
+	return NULL;
+}
+
+static int test_retained_plans(void)
+{
+	KorSVGDataRef data = KorSVGDataCreate(svg, sizeof(svg) - 1);
+	KorSVGDocumentRef document = NULL;
+	KorSVGContextRef a = NULL;
+	KorSVGContextRef b = NULL;
+	KorSVGContextRef c = NULL;
+	struct draw_thread threads[8];
+	pthread_t ids[8];
+	pthread_t limit_thread;
+	size_t after_threads;
+	size_t created = 0;
+	size_t i;
+	int status = 1;
+
+	if (!data)
+		goto cleanup;
+	archetypon_svg_counters_reset();
+	document = KorSVGDocumentCreateFromData(data, NULL);
+	if (!document || archetypon_svg_document_compile_count() != 1) {
+		fail("SVG document was not compiled exactly once");
+		goto cleanup;
+	}
+	KorSVGDataRelease(data);
+	data = NULL;
+	a = KorSVGContextCreate(40, 20);
+	b = KorSVGContextCreate(80, 40);
+	c = KorSVGContextCreate(60, 30);
+	if (!a || !b || !c)
+		goto cleanup;
+	archetypon_svg_counters_reset();
+	if (!KorSVGContextDrawDocument(a, document) ||
+	    archetypon_svg_plan_compile_count() != 1 ||
+	    !KorSVGContextDrawDocument(a, document) ||
+	    archetypon_svg_plan_compile_count() != 1 ||
+	    !KorSVGContextDrawDocument(b, document) ||
+	    archetypon_svg_plan_compile_count() != 2 ||
+	    !KorSVGContextDrawDocument(a, document) ||
+	    archetypon_svg_plan_compile_count() != 2 ||
+	    !KorSVGContextDrawDocument(c, document) ||
+	    archetypon_svg_plan_compile_count() != 3 ||
+	    !KorSVGContextDrawDocument(b, document) ||
+	    archetypon_svg_plan_compile_count() != 4) {
+		fail("retained plan LRU behavior is wrong");
+		goto cleanup;
+	}
+	KorSVGDocumentSetPlanCacheLimit(document, 1024);
+	archetypon_svg_counters_reset();
+	if (!KorSVGContextDrawDocument(a, document) ||
+	    !KorSVGContextDrawDocument(a, document) ||
+	    archetypon_svg_plan_compile_count() != 2 ||
+	    KorSVGDocumentGetPlanCacheCost(document) != 0) {
+		fail("oversized plans were cached past the byte bound");
+		goto cleanup;
+	}
+	KorSVGDocumentRelease(document);
+	document = KorSVGDocumentCreateFromData(
+		data = KorSVGDataCreate(svg, sizeof(svg) - 1), NULL);
+	KorSVGDataRelease(data);
+	data = NULL;
+	if (!document)
+		goto cleanup;
+	archetypon_svg_counters_reset();
+	for (created = 0; created < 8; created++) {
+		threads[created].document = document;
+		threads[created].status = 0;
+		if (pthread_create(&ids[created], NULL, draw_in_thread,
+				   &threads[created]) != 0)
+			break;
+	}
+	for (i = 0; i < created; i++) {
+		if (pthread_join(ids[i], NULL) != 0 || !threads[i].status) {
+			fail("concurrent retained draw failed");
+			goto cleanup;
+		}
+	}
+	if (created != 8) {
+		fail("could not create concurrent draw threads");
+		goto cleanup;
+	}
+	after_threads = archetypon_svg_plan_compile_count();
+	if (after_threads != 1 || !KorSVGContextSetViewport(b, 0, 0, 64, 32) ||
+	    !KorSVGContextDrawDocument(b, document) ||
+	    archetypon_svg_plan_compile_count() != after_threads) {
+		fail("concurrent plan publication was not reused");
+		goto cleanup;
+	}
+	if (pthread_create(&limit_thread, NULL, change_cache_limit, document) != 0) {
+		fail("could not create cache-limit thread");
+		goto cleanup;
+	}
+	for (i = 0; i < 200; i++) {
+		if (!KorSVGContextDrawDocument(b, document)) {
+			fail("draw failed while cache limit changed");
+			break;
+		}
+	}
+	if (pthread_join(limit_thread, NULL) != 0 || i != 200)
+		goto cleanup;
+	status = 0;
+cleanup:
+	KorSVGContextRelease(a);
+	KorSVGContextRelease(b);
+	KorSVGContextRelease(c);
+	KorSVGDocumentRelease(document);
+	KorSVGDataRelease(data);
+	return status;
+}
+
 int main(int argument_count, char **arguments)
 {
 	struct test_fixture fixture = { 0 };
@@ -367,6 +509,8 @@ int main(int argument_count, char **arguments)
 	if (test_safe_url_io(&fixture, arguments[1]))
 		goto cleanup;
 	if (test_rejections(&fixture))
+		goto cleanup;
+	if (test_retained_plans())
 		goto cleanup;
 	status = 0;
 

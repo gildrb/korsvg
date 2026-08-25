@@ -20,7 +20,7 @@ for symbol in $symbols; do
 	printf '%s\n' "$defined_symbols" | grep -qx "$symbol"
 done
 
-dependencies='archetypon_svg_canvas_size archetypon_svg_render archetypon_image_free'
+dependencies='archetypon_svg_document_create archetypon_svg_plan_create archetypon_svg_plan_release'
 for symbol in $dependencies; do
 	printf '%s\n' "$undefined_symbols" | grep -qx "$symbol"
 done
@@ -41,9 +41,9 @@ int main(void)
 EOF
 ${CC:-cc} -std=c11 -I"$temporary/stage/usr/include" \
 	"$temporary/installed.c" -L"$temporary/stage/usr/lib" \
-	-lkorsvg -larchetypon -lm ${LDFLAGS:-} -o "$temporary/installed"
+	-lkorsvg -larchetypon -pthread -lm ${LDFLAGS:-} -o "$temporary/installed"
 "$temporary/installed"
-grep -q -- '-lkorsvg -larchetypon -lm' \
+grep -q -- '-lkorsvg -larchetypon -pthread -lm' \
 	"$temporary/stage/usr/lib/pkgconfig/korsvg.pc"
 
 printf 'korsvg tests passed\n'
