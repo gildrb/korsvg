@@ -12,52 +12,70 @@ make
 make test
 ```
 
-The default build expects both repositories under the same parent directory. Set `ARCHETYPON_DIR=/path/to/archetypon` when they are elsewhere. KorSVG builds Archetypon when its library is missing or stale.
+The default build expects both repositories under the same parent directory. Set `ARCHETYPON_DIR=/path/to/archetypon` when they are elsewhere. KorSVG compiles the Archetypon sources into a project-local dependency archive and does not modify the Archetypon checkout.
 
 The build produces `libkorsvg.a`. It contains the document adapter only; consumers link it with `libarchetypon.a` and the system math runtime:
 
 ```sh
-cc app.c -I. -I../archetypon libkorsvg.a \
-  ../archetypon/libarchetypon.a -lm
+cc app.c -I. libkorsvg.a build/libarchetypon.a -lm
 ```
+
+Install both static libraries, the public headers, and `korsvg.pc` with:
+
+```sh
+make install PREFIX=/usr/local
+cc app.c $(pkg-config --cflags --libs korsvg)
+```
+
+`DESTDIR` is supported for staged packaging. The pkg-config link flags propagate the Archetypon and math dependencies.
 
 ## Document surface
 
 | Function | Contract |
 | --- | --- |
-| `CGSVGDocumentCreateFromData` | Copies immutable SVG bytes, verifies canvas geometry, and parses the complete supported document |
-| `CGSVGDocumentCreateFromURL` | Reads at most 32 MiB from a regular file and delegates to data creation |
-| `CGSVGDocumentRetain` / `CGSVGDocumentRelease` | Manage an atomic document reference count |
-| `CGSVGDocumentGetCanvasSize` | Returns the root `viewBox` size, or root width and height when no `viewBox` exists |
-| `CGContextDrawSVGDocument` | Renders into the active RGBA viewport and source-over composites the result |
-| `CGSVGDocumentWriteToData` | Appends the original source bytes to mutable data |
-| `CGSVGDocumentWriteToURL` | Writes the original source bytes to a file |
-| `CGSVGDocumentGetTypeID` | Returns the stable KorSVG document type identifier |
+| `KorSVGDocumentCreateFromData` | Copies immutable SVG bytes, verifies canvas geometry, and parses the complete supported document |
+| `KorSVGDocumentCreateFromURL` | Opens one regular-file descriptor, reads at most 32 MiB from it, and delegates to data creation |
+| `KorSVGDocumentRetain` / `KorSVGDocumentRelease` | Manage an atomic document reference count |
+| `KorSVGDocumentGetCanvasSize` | Returns the root `viewBox` size, or root width and height when no `viewBox` exists |
+| `KorSVGContextDrawDocument` | Renders and composites into the active RGBA viewport; returns nonzero on success and zero on failure |
+| `KorSVGDocumentWriteToData` | Appends the original source bytes to mutable data |
+| `KorSVGDocumentWriteToURL` | Atomically replaces a file with the original source bytes after a complete temporary-file write |
+| `KorSVGDocumentGetTypeID` | Returns the stable KorSVG document type identifier |
 
-`CFDataRef`, `CFURLRef`, `CGContextRef`, `CGSVGDocumentRef`, `CFDictionaryRef`, `CFTypeID`, and `CGSize` have local C definitions. No platform headers or dynamic symbol lookup are required. Options are accepted for call-shape compatibility and currently have no policy effect.
+`KorSVGDataRef`, `KorSVGURLRef`, `KorSVGContextRef`, `KorSVGDocumentRef`, `KorSVGOptionsRef`, `KorSVGTypeID`, and `KorSVGSize` are KorSVG-owned types. This is an independent portable API, not a Core Foundation or Core Graphics compatibility layer. No platform headers or dynamic symbol lookup are required. Options are reserved for future KorSVG policy and currently have no effect. The header can be included from C or C++.
 
 ## Drawing
 
 ```c
 #include "korsvg.h"
 
-CFDataRef data = KorSVGDataCreate(svg, svg_length);
-CGSVGDocumentRef document = CGSVGDocumentCreateFromData(data, NULL);
-CGSize size = CGSVGDocumentGetCanvasSize(document);
-CGContextRef context = KorSVGContextCreate(512, 512);
+KorSVGDataRef data = KorSVGDataCreate(svg, svg_length);
+KorSVGDocumentRef document = KorSVGDocumentCreateFromData(data, NULL);
+KorSVGSize size = KorSVGDocumentGetCanvasSize(document);
+KorSVGContextRef context = KorSVGContextCreate(512, 512);
 
 KorSVGContextSetViewport(context, 0, 0, 512, 512);
-CGContextDrawSVGDocument(context, document);
+if (!KorSVGContextDrawDocument(context, document)) {
+        /* KorSVGGetLastError() describes the failure. */
+}
 
 uint8_t *rgba = KorSVGContextGetData(context);
 size_t stride = KorSVGContextGetStride(context);
 
 KorSVGContextRelease(context);
-CGSVGDocumentRelease(document);
+KorSVGDocumentRelease(document);
 KorSVGDataRelease(data);
 ```
 
 The context is straight-alpha RGBA with an explicit stride. Its default viewport is the full image. `KorSVGContextClear` initializes all pixels, and `KorSVGContextSetViewport` bounds the next and subsequent draws. Diagnostics are thread-local and available through `KorSVGGetLastError`.
+
+## Concurrency
+
+Data created with `KorSVGDataCreate`, URLs, and documents are immutable after creation. Separate threads may read them concurrently. Their retain and release operations use atomic reference counts, but each thread must own a reference for the full duration of its use. The final release must not overlap any use.
+
+Mutable data and contexts require exclusive external synchronization. This includes reads through pointers returned by `KorSVGDataGetBytes` and `KorSVGContextGetData`. Calls on one thread replace that thread's last-error text; callers should inspect it before making another KorSVG call on the same thread.
+
+URL loading validates and reads the descriptor returned by one `open` call, so path replacement cannot redirect an in-progress read. URL writing uses a temporary file in the destination directory and renames it only after the full write succeeds. Concurrent successful writers to the same path each publish a complete document, but which write wins is unspecified.
 
 ## Parsing boundary
 
@@ -75,7 +93,7 @@ Supported SVG geometry, paths, transforms, solid paints, element opacity, fill r
 4. byte-exact data and file serialization plus URL reloading;
 5. rejection of malformed structure, non-finite geometry, unsupported effects, null inputs, and immutable-destination operations.
 
-The test checks that the compatibility symbols are defined by `libkorsvg.a`, while the renderer symbols remain undefined Archetypon dependencies. `cc`, `clang`, ASan, and UBSan builds are supported through conventional `CC`, `CFLAGS`, and `LDFLAGS` overrides.
+The test checks that the public symbols are defined by `libkorsvg.a`, while the renderer symbols remain undefined Archetypon dependencies. It also checks C++ linkage and a staged installed consumer. Symbol checks work with GNU and Darwin `nm` output. `cc`, `clang`, ASan, and UBSan builds are supported through conventional tool variables.
 
 ## Files
 
@@ -84,7 +102,8 @@ korsvg/
   korsvg.h          public opaque document, data, URL, and RGBA context API
   main.c            ownership, I/O, document calls, rendering, compositing
   tests/test.c      API, lifetime, pixel, round-trip, and rejection proof
-  tests/test.sh     isolated execution and exported-symbol proof
+  tests/test_cpp.cpp C++ header and linkage proof
+  tests/test.sh     execution, install, and portable exported-symbol proof
   Makefile          KorSVG build plus Archetypon dependency linkage
   LICENSE           MIT terms
 ```
